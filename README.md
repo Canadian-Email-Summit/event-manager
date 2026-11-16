@@ -57,7 +57,3 @@ Version 1.1.0 introduced generic admin page slugs (`event-manager-*`) and the `[
 - If an archive does not render, verify the assigned WordPress page, parent, slug, and Past Event Detail template.
 - If a shortcode appears as text, confirm it is in a Shortcode block and uses the correct spelling.
 - If sponsor or speaker data is missing after an update, do not rename `caes_` records manually. Restore from backup if needed and investigate on staging.
-
-## Version history
-
-See `CHANGELOG.md` for changes from v1.0.0 through v1.1.1. Historical release notes are also included as `RELEASE-*.md` files.
