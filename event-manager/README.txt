@@ -1,23 +1,63 @@
-Event Manager 0.1.5
+# Event Manager
 
-Includes speaker editor, agenda sessions, configurable tracks per year, session background colours, and shortcode [event_agenda year="2026"].
+**Version:** 1.1.1  
+**Platform:** WordPress  
+**Minimum PHP version:** 7.4 (declared in plugin header)
 
-Upgrade: replace existing plugin; do not run old Speaker Manager simultaneously. Back up the site before upgrading.
+Event Manager provides administration and website displays for event years, venues, speakers, agenda sessions, tracks, recordings, sponsors, and historical event archives. It includes CSV import and export tools.
 
-0.1.6: Public agenda speaker layout. Moderator centred separately, panellists evenly distributed with company below name.
+## Installation and upgrade
 
-0.1.7: Add speaker Move to Trash controls in the speaker list and editor, with nonce and capability checks.
+1. Back up your WordPress database and files.
+2. Test the ZIP on a staging site before updating production.
+3. In WordPress, go to Plugins > Add New Plugin > Upload Plugin, select the ZIP, and replace the installed version when prompted.
+4. Verify the existing pages, shortcodes, event years, speakers, agenda, sponsors, recordings, archives, and import/export workflows.
+5. If archive page slugs change, review public URLs and redirects.
 
-0.1.8: Fix speaker list row loop so each speaker has their own Move to Trash action.
+**Compatibility:** The v1.1.x releases retain legacy `caes_` database identifiers and existing shortcode support. Do not rename stored post types, taxonomy names, metadata, or options manually. Newly created records still use legacy internal storage identifiers in v1.1.1. The public naming cleanup is not a full data-schema migration.
 
-0.1.9: Event Archives manager, Recordings custom post type, reusable archive shortcodes, lightweight click-to-play YouTube embeds.
+## Website shortcodes
 
-0.1.10: Dedicated Recordings editor with linked speakers, year and venue metadata, description, and video URL. Archive addresses.
+Insert a WordPress Shortcode block on the relevant page.
 
-0.1.11: Fix Event Archives table alignment, add reusable Venues manager, guarded year and venue deletion, overview dashboard, shortcode copy panels, and summit-YYYY archive URL support. Existing legacy venue text is retained until a shared venue is assigned.
+| Purpose | Current shortcode | Notes |
+| --- | --- | --- |
+| Speaker directory | `[event_speakers year="2026"]` | Replace the year as needed. Legacy `[caes_speakers]` remains supported. |
+| Agenda | `[event_agenda year="2026"]` | Replace the year as needed. |
+| Sponsors | `[event_sponsors]` | Year-specific rendering depends on event context/configuration. |
+| Archive index | `[event_archive_index]` | Lists historical event years. |
+| Archive detail | `[event_archive_detail]` | The Past Event Detail template already includes the archive shortcode. Do not add it twice. |
 
-0.1.12: Sponsor profiles, Media Library logos, reusable multiyear assignments, customizable tiers, current event year setting, UTM-tagged links, and [event_sponsors] shortcode. Sponsor content is not imported automatically. Existing theme sponsor blocks remain unchanged until migration.
+The admin Overview and Speakers screens display the current `[event_speakers]` name as of v1.1.1.
 
-0.1.13: Sponsor assignments no longer use manual display order. Sponsors are grouped by configured tier order and sorted alphabetically within each tier. Existing assignments are preserved.
+## Managing content
 
-0.1.14: Fix sponsorship assignment validation when sponsor IDs contain uppercase characters. Preserve existing sponsor records and IDs.
+- **Event years and venues:** Maintain event-year records and shared venue information. Archive pages can be assigned to specific years.
+- **Speakers:** Maintain profiles, biographies, headshots, company/job details, and event-year associations.
+- **Agenda:** Manage sessions, speakers, moderators, tracks, and session background colours.
+- **Recordings:** Link recordings to speakers and event years, with video URLs and related metadata.
+- **Sponsors:** Maintain sponsor profiles, logos, tiers, and assignments by year. Display order follows tier order, then alphabetical order within each tier.
+- **Archives:** Assign an existing WordPress page and its slug to an event year. The page's parent is managed separately in WordPress. Check URL changes and redirects before publishing.
+
+## CSV import and export
+
+The Import / Export admin screen is intended for administrators. It supports sample CSV downloads, upload previews, validation, and confirmation. Recommended import order: Venues, Event Archives, Speakers, Tracks, Agenda, Recordings, Sponsorship Tiers, Sponsors, Sponsor Assignments, and Agenda Colours.
+
+CSV uploads are limited to **2 MB** and **500 rows**. Preview sessions expire after **20 minutes**. Existing published posts may require explicit approval for staged updates. Imports do not automatically delete records or download external images. See `IMPORT-EXPORT-README.md` in the plugin for detailed constraints and key conventions.
+
+## Legacy compatibility and current limitations
+
+Version 1.1.0 introduced generic admin page slugs (`event-manager-*`) and the `[event_speakers]` shortcode. Old `caes_` shortcodes and stored identifiers remain supported for existing content. Older bookmarked admin URLs redirect to the current pages.
+
+**Important:** This does not yet meet the longer-term goal of generic `event_*` storage for newly created records. Internal post types, metadata, option names, PHP functions, and some CSS identifiers remain legacy for compatibility. A future version would require a tested dual-schema strategy or migration.
+
+## Troubleshooting checklist
+
+- If speakers or agenda items do not appear, confirm they are published and assigned to the intended event year.
+- If an archive does not render, verify the assigned WordPress page, parent, slug, and Past Event Detail template.
+- If a shortcode appears as text, confirm it is in a Shortcode block and uses the correct spelling.
+- If sponsor or speaker data is missing after an update, do not rename `caes_` records manually. Restore from backup if needed and investigate on staging.
+
+## Version history
+
+See `CHANGELOG.md` for changes from v1.0.0 through v1.1.1. Historical release notes are also included as `RELEASE-*.md` files.

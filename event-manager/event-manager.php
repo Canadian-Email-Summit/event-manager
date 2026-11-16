@@ -2,9 +2,9 @@
 /**
  * Plugin Name: Event Manager
  * Description: Modular event management for venues, archives, speakers, sessions, and recordings.
- * Version: 0.1.15
+ * Version: 1.1.1
  * Requires PHP: 7.4
- * Text Domain: caes-speakers
+ * Text Domain: event-manager
  */
 if (!defined('ABSPATH')) exit;
 
@@ -125,6 +125,21 @@ add_shortcode('caes_speakers',function($atts){
     wp_reset_postdata();echo '</div>';return ob_get_clean();
 });
 
+// Public shortcode. The old shortcode remains registered for existing pages.
+add_shortcode('event_speakers', function($atts) {
+    return do_shortcode('[caes_speakers' . event_manager_shortcode_attributes($atts) . ']');
+});
+function event_manager_shortcode_attributes($atts) {
+    if (!is_array($atts)) return '';
+    $out = '';
+    foreach (array('year', 'limit') as $key) {
+        if (isset($atts[$key]) && is_scalar($atts[$key])) {
+            $out .= ' ' . $key . '="' . esc_attr((string) $atts[$key]) . '"';
+        }
+    }
+    return $out;
+}
+
 function caes_speaker_social_links($id,$name){
     $items=array('LinkedIn'=>get_post_meta($id,'caes_linkedin',true), 'Website'=>get_post_meta($id,'caes_website',true), 'Bluesky'=>get_post_meta($id,'caes_bluesky',true), 'Instagram'=>get_post_meta($id,'caes_instagram',true), 'X'=>get_post_meta($id,'caes_x',true));
     // Honour the legacy social field as a website link only if no explicit website exists.
@@ -155,7 +170,37 @@ add_filter('the_content',function($content){
 },12);
 add_action('wp_enqueue_scripts',function(){wp_enqueue_style('caes-speakers',plugin_dir_url(__FILE__).'speakers.css',array(),'0.1.0');wp_register_script('caes-speaker-fallback',false,array(),'0.1.0',true);wp_enqueue_script('caes-speaker-fallback');wp_add_inline_script('caes-speaker-fallback','document.addEventListener("error",function(e){var i=e.target;if(!i.matches||!i.matches("img[data-speaker-photo]"))return;var p=document.createElement("span");p.className="caes-speaker-photo-placeholder";p.setAttribute("aria-hidden","true");p.textContent=i.dataset.initial||"?";i.replaceWith(p);},true);');});
 
+
+/** Backwards-compatible admin bookmarks. No database identifiers are migrated. */
+add_action('admin_init', function() {
+    if (!is_admin() || !current_user_can('edit_others_posts') || !isset($_GET['page'])) return;
+    $legacy = array(
+        'caes-event-manager' => 'event-manager',
+        'caes-em-speakers' => 'event-manager-speakers',
+        'caes-em-agenda' => 'event-manager-agenda',
+        'caes-em-tracks' => 'event-manager-tracks',
+        'caes-em-settings' => 'event-manager-settings',
+        'caes-em-sponsors' => 'event-manager-sponsors',
+        'caes-em-sponsor-tiers' => 'event-manager-sponsor-tiers',
+        'caes-em-archives' => 'event-manager-archives',
+        'caes-em-venues' => 'event-manager-venues',
+        'caes-em-recordings' => 'event-manager-recordings',
+        'caes-em-import' => 'event-manager-import',
+    );
+    $page = sanitize_key(wp_unslash($_GET['page']));
+    if (!isset($legacy[$page])) return;
+    $args = array('page' => $legacy[$page]);
+    foreach ($_GET as $key => $value) {
+        if ($key === 'page' || !is_scalar($value)) continue;
+        $args[sanitize_key($key)] = sanitize_text_field(wp_unslash($value));
+    }
+    wp_safe_redirect(add_query_arg($args, admin_url('admin.php')));
+    exit;
+});
+
 require_once __DIR__ . '/admin.php';
 require_once __DIR__ . '/archives.php';
 
 require_once __DIR__ . '/sponsors.php';
+
+require_once __DIR__ . '/import-export.php';

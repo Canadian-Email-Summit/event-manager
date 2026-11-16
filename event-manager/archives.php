@@ -6,7 +6,7 @@ add_action('init',function(){
  register_post_type('caes_event_archive',array('labels'=>array('name'=>'Event Archives','singular_name'=>'Event Archive'),'public'=>false,'show_ui'=>false,'show_in_rest'=>false,'supports'=>array('title','editor')));
  register_post_type('caes_recording',array('labels'=>array('name'=>'Recordings','singular_name'=>'Recording'),'public'=>false,'show_ui'=>false,'show_in_menu'=>false,'show_in_rest'=>false,'supports'=>array('title','editor','revisions'),'capability_type'=>'post','map_meta_cap'=>true,'capabilities'=>array('edit_posts'=>'edit_others_posts','create_posts'=>'edit_others_posts','publish_posts'=>'edit_others_posts')));
 });
-add_action('admin_menu',function(){add_submenu_page('caes-event-manager','Event Archives','Event Archives','manage_options','caes-em-archives','caes_em_archive_admin');add_submenu_page('caes-event-manager','Venues','Venues','manage_options','caes-em-venues','caes_em_venues_admin');add_submenu_page('caes-event-manager','Recordings','Recordings','edit_others_posts','caes-em-recordings','caes_em_recordings_admin');},20);
+add_action('admin_menu',function(){add_submenu_page('event-manager','Event Archives','Event Archives','manage_options','event-manager-archives','caes_em_archive_admin');add_submenu_page('event-manager','Venues','Venues','manage_options','event-manager-venues','caes_em_venues_admin');add_submenu_page('event-manager','Recordings','Recordings','edit_others_posts','event-manager-recordings','caes_em_recordings_admin');},20);
 function caes_em_archive_defaults(){return array(
  '2019'=>array('venue'=>'The Spoke Club, Toronto','format'=>'In person','show'=>1),
  '2020'=>array('venue'=>'Virtual Event','format'=>'Virtual','show'=>1),
@@ -18,17 +18,18 @@ function caes_em_archive_defaults(){return array(
  );}
 function caes_em_archives(){
  $stored=get_option('caes_em_event_archives',null);
- if(!is_array($stored)){$stored=caes_em_archive_defaults();add_option('caes_em_event_archives',$stored);}
+ if(!is_array($stored)){$stored=array();add_option('caes_em_event_archives',$stored);}
  return $stored;
 }
-/** Shared venue records. Existing event data remains the fallback until assigned. */
+/** Shared venue records are the authoritative source for event locations. */
 function caes_em_venues(){
  $saved=get_option('caes_em_venues',array());return is_array($saved)?$saved:array();
 }
 function caes_em_venue_for_year($row){
- $venues=caes_em_venues();$id=sanitize_key((string)($row['venue_id']??''));
- if($id&&isset($venues[$id]))return $venues[$id];
- return array('name'=>$row['venue']??'','address'=>$row['address']??'','details'=>'');
+ $venues=caes_em_venues();$id=(string)($row['venue_id']??'');
+ // Venue identifiers are case-sensitive: generated IDs may contain uppercase letters.
+ if($id!==''&&isset($venues[$id]))return $venues[$id];
+ return array('name'=>'','address'=>'','details'=>'');
 }
 function caes_em_venue_label($row){$v=caes_em_venue_for_year($row);return $v['name']??'';}
 function caes_em_venue_address($row){$v=caes_em_venue_for_year($row);return $v['address']??'';}
@@ -46,6 +47,15 @@ function caes_em_venues_admin(){
    if(!$id||!isset($venues[$id]))$id='venue_'.strtolower(wp_generate_password(10,false,false));
    $venues[$id]=array('name'=>$name,'address'=>$address,'details'=>$details);
    update_option('caes_em_venues',$venues,false);$notice='Venue saved.';
+   if(isset($_POST['venue_years_present'])){
+    $chosen=isset($_POST['venue_years'])&&is_array($_POST['venue_years'])?array_map('sanitize_text_field',wp_unslash($_POST['venue_years'])):array();
+    $archives=caes_em_archives();foreach($archives as $y=>&$archive){
+     if(in_array((string)$y,$chosen,true))$archive['venue_id']=$id;
+     elseif(($archive['venue_id']??'')===$id)$archive['venue_id']='';
+    }unset($archive);update_option('caes_em_event_archives',$archives,false);
+   }
+   if(isset($_POST['caes_em_save_venue'])&&$_POST['caes_em_save_venue']==='save_new'){$_GET['venue']='';}
+
   }
  }
  if(isset($_POST['caes_em_delete_venue'])){
@@ -58,10 +68,11 @@ function caes_em_venues_admin(){
  if($notice)echo '<div class="notice notice-info"><p>'.esc_html($notice).'</p></div>';
  $edit=sanitize_text_field(wp_unslash($_GET['venue']??''));$current=isset($venues[$edit])?$venues[$edit]:array();
  echo '<div style="max-width:850px;background:#fff;border:1px solid #c3c4c7;padding:20px;margin:18px 0"><h2>'.($current?'Edit venue':'Add venue').'</h2><form method="post">';wp_nonce_field('caes_em_venues_save');
- echo '<input type="hidden" name="venue_id" value="'.esc_attr($current?$edit:'').'"><p><label><strong>Venue name</strong><br><input class="regular-text" name="venue_name" required value="'.esc_attr($current['name']??'').'"></label></p><p><label><strong>Street address</strong><br><input class="large-text" name="venue_address" value="'.esc_attr($current['address']??'').'"></label></p><p><label><strong>Venue details (optional)</strong><br><textarea class="large-text" rows="3" name="venue_details">'.esc_textarea($current['details']??'').'</textarea></label></p><button class="button button-primary" name="caes_em_save_venue" value="1">Save venue</button> <a class="button" href="'.esc_url(admin_url('admin.php?page=caes-em-venues')).'">Clear form</a></form></div>';
- echo '<h2>Saved venues</h2><table class="widefat striped" style="max-width:1000px"><thead><tr><th>Venue</th><th>Address</th><th>Used by</th><th>Actions</th></tr></thead><tbody>';
+ echo '<input type="hidden" name="venue_id" value="'.esc_attr($current?$edit:'').'"><p><label><strong>Venue name</strong><br><input class="regular-text" name="venue_name" required value="'.esc_attr($current['name']??'').'"></label></p><p><label><strong>Street address</strong><br><input class="large-text" name="venue_address" value="'.esc_attr($current['address']??'').'"></label></p><p><label><strong>Venue details (optional)</strong><br><textarea class="large-text" rows="3" name="venue_details">'.esc_textarea($current['details']??'').'</textarea></label></p><input type="hidden" name="venue_years_present" value="1">';
+ $archives=caes_em_archives();ksort($archives,SORT_NUMERIC);echo '<p><strong>Assigned event years</strong><br><span class="description">Select the event years using this venue.</span></p><div style="display:flex;gap:8px;flex-wrap:wrap;margin:12px 0">';foreach($archives as $y=>$ar){echo '<label style="border:1px solid #c3c4c7;padding:7px 10px;border-radius:5px"><input type="checkbox" name="venue_years[]" value="'.esc_attr($y).'" '.checked(($ar['venue_id']??'')===($current?$edit:'__none__'),true,false).'> '.esc_html($y).'</label>';}echo '</div><button class="button button-primary" name="caes_em_save_venue" value="1">Save venue</button> <button class="button" name="caes_em_save_venue" value="save_new">Save and add another</button> <a class="button" href="'.esc_url(admin_url('admin.php?page=event-manager-venues')).'">Clear form</a></form></div>';
+ echo '<h2>Saved venues</h2><table class="widefat striped" style="max-width:1000px"><thead><tr><th>Venue</th><th>Address</th><th>Assigned Events</th><th>Actions</th></tr></thead><tbody>';
  foreach($venues as $id=>$venue){$years=array();foreach(caes_em_archives() as $year=>$row)if(($row['venue_id']??'')===$id)$years[]=$year;
-  echo '<tr><td>'.esc_html($venue['name']).'</td><td>'.esc_html($venue['address']).'</td><td>'.esc_html(implode(', ',$years)?:'Not assigned').'</td><td><a class="button button-small" href="'.esc_url(add_query_arg(array('page'=>'caes-em-venues','venue'=>$id),admin_url('admin.php'))).'">Edit</a> ';
+  echo '<tr><td>'.esc_html($venue['name']).'</td><td>'.esc_html($venue['address']).'</td><td>'.($years?implode(', ',array_map(function($y){return '<a href="'.esc_url(admin_url('admin.php?page=event-manager-archives')).'">'.esc_html($y).'</a>';},$years)):'Not assigned').'</td><td><a class="button button-small" href="'.esc_url(add_query_arg(array('page'=>'event-manager-venues','venue'=>$id),admin_url('admin.php'))).'">Edit</a> ';
   if(!$years){echo '<form method="post" style="display:inline">';wp_nonce_field('caes_em_venues_delete');echo '<input type="hidden" name="venue_id" value="'.esc_attr($id).'"><button class="button button-small" name="caes_em_delete_venue" value="1" onclick="return confirm(\'Delete this unused venue?\')">Delete</button></form>';}
   else echo '<span class="description">Reassign events to delete</span>';echo '</td></tr>';
  }
@@ -73,18 +84,31 @@ function caes_em_archive_admin(){
  if(isset($_POST['caes_em_save_archives'])){
   check_admin_referer('caes_em_archive_save');
   $years=isset($_POST['years'])&&is_array($_POST['years'])?wp_unslash($_POST['years']):array();
-  $out=array();$venues=caes_em_venues();
+  $out=array();$errors=array();$assigned_pages=array();$venues=caes_em_venues();
   foreach($years as $year=>$row){
    $year=sanitize_text_field($year);if(!preg_match('/^20[0-9]{2}$/D',$year)||!is_array($row))continue;
    $venue_id=sanitize_text_field($row['venue_id']??'');
    if(!isset($venues[$venue_id])){foreach(array_keys($venues) as $candidate){if(strcasecmp($candidate,$venue_id)===0){$venue_id=$candidate;break;}}}
    if(!isset($venues[$venue_id]))$venue_id='';
    $old=$data[$year]??array();
-   $out[$year]=array('venue_id'=>$venue_id,'venue'=>sanitize_text_field($old['venue']??''),'address'=>sanitize_text_field($old['address']??''),'format'=>in_array(($row['format']??''),array('Virtual','In person','Hybrid'),true)?$row['format']:'In person','show'=>empty($row['show'])?0:1,'description'=>sanitize_textarea_field($row['description']??''));
+   $page_id=absint($row['page_id']??0);
+   $page=$page_id?get_post($page_id):null;
+   if(!$page || $page->post_type!=='page')$page_id=0;
+   if($page_id && in_array($page_id,$assigned_pages??array(),true)){$errors[]='Year '.$year.': that WordPress page is already assigned to another event year.';$page_id=0;}
+   if($page_id)$assigned_pages[]=$page_id;
+   $slug=sanitize_title(wp_unslash($row['slug']??''));
+   if($page_id){
+    if($slug==='')$slug=$page->post_name;
+    // Never silently alter an existing page URL if another sibling uses the slug.
+    $conflict=get_page_by_path(($page->post_parent?trim(get_page_uri($page->post_parent),'/').'/':'').$slug,OBJECT,'page');
+    if($conflict && (int)$conflict->ID!==$page_id){$errors[]='Year '.$year.': the requested page slug is already used by another page.';$slug=$page->post_name;}
+    elseif($slug!==$page->post_name){$updated=wp_update_post(array('ID'=>$page_id,'post_name'=>$slug),true);if(is_wp_error($updated)){$errors[]='Year '.$year.': '.$updated->get_error_message();$slug=$page->post_name;}}
+   }else{$slug='';}
+   $out[$year]=array('page_id'=>$page_id,'slug'=>$slug,'venue_id'=>$venue_id,'venue'=>sanitize_text_field($old['venue']??''),'address'=>sanitize_text_field($old['address']??''),'format'=>in_array(($row['format']??''),array('Virtual','In person','Hybrid'),true)?$row['format']:'In person','show'=>empty($row['show'])?0:1,'description'=>sanitize_textarea_field($row['description']??''));
   }
   $new=isset($_POST['new_year'])?sanitize_text_field(wp_unslash($_POST['new_year'])):'';
-  if(preg_match('/^20[0-9]{2}$/D',$new)&&!isset($out[$new]))$out[$new]=array('venue_id'=>'','venue'=>'','format'=>'In person','show'=>0,'description'=>'','address'=>'');
-  krsort($out,SORT_NUMERIC);update_option('caes_em_event_archives',$out,false);$data=$out;$notice='Event archives saved.';
+  if(preg_match('/^20[0-9]{2}$/D',$new)&&!isset($out[$new]))$out[$new]=array('venue_id'=>'','venue'=>'','format'=>'In person','show'=>0,'description'=>'','address'=>'','page_id'=>0,'slug'=>'');
+  krsort($out,SORT_NUMERIC);update_option('caes_em_event_archives',$out,false);$data=$out;$notice='Event archives saved.'.($errors?' '.implode(' ',$errors):'');
  }
  if(isset($_POST['caes_em_delete_year'])){
   check_admin_referer('caes_em_archive_delete');$year=sanitize_text_field(wp_unslash($_POST['delete_year']??''));
@@ -96,12 +120,20 @@ function caes_em_archive_admin(){
   }
  }
  krsort($data,SORT_NUMERIC);$venues=caes_em_venues();
- echo '<div class="wrap"><h1>Event Archives</h1><p>Manage event years, event formats, and their shared venues. Create physical venues in <a href="'.esc_url(admin_url('admin.php?page=caes-em-venues')).'">Venues</a>, then assign them below. Virtual events do not require a venue.</p>';
+ echo '<div class="wrap"><h1>Event Archives</h1><p>Manage event years, event formats, and their shared venues. Create physical venues in <a href="'.esc_url(admin_url('admin.php?page=event-manager-venues')).'">Venues</a>, then assign them below. Virtual events do not require a venue.</p>';
  if($notice)echo '<div class="notice notice-info"><p>'.esc_html($notice).'</p></div>';
  echo '<form method="post">';wp_nonce_field('caes_em_archive_save');
- echo '<div style="overflow-x:auto"><table class="widefat striped" style="table-layout:fixed;min-width:1000px"><thead><tr><th style="width:8%">Year</th><th style="width:22%">Venue</th><th style="width:23%">Address (from venue)</th><th style="width:12%">Format</th><th style="width:23%">Description</th><th style="width:12%">Show in archive</th></tr></thead><tbody>';
+ echo '<div style="overflow-x:auto"><table class="widefat striped" style="table-layout:fixed;min-width:1000px"><thead><tr><th style="width:8%">Year</th><th style="width:18%">Archive page and slug</th><th style="width:19%">Venue</th><th style="width:18%">Address (from venue)</th><th style="width:12%">Format</th><th style="width:18%">Description</th><th style="width:12%">Show in archive</th></tr></thead><tbody>';
  foreach($data as $year=>$row){$key='years['.esc_attr($year).']';$venue=caes_em_venue_for_year($row);
-  echo '<tr><th>'.esc_html($year).'</th><td><select style="width:100%" name="'.$key.'[venue_id]"><option value="">'.(empty($row['venue'])?'No venue':'Legacy: '.esc_html($row['venue'])).'</option>';
+  $selected_page=absint($row['page_id']??0);$selected_post=$selected_page?get_post($selected_page):null;
+  $current_slug=$selected_post && $selected_post->post_type==='page'?$selected_post->post_name:($row['slug']??'');
+  echo '<tr><th>'.esc_html($year).'</th><td><select style="width:100%" name="'.$key.'[page_id]"><option value="0">Select a WordPress page</option>';
+  foreach(get_pages(array('post_status'=>array('publish','draft','private'),'sort_column'=>'post_title')) as $archive_page){
+   echo '<option value="'.esc_attr($archive_page->ID).'" '.selected($selected_page,$archive_page->ID,false).'>'.esc_html(get_page_uri($archive_page->ID)).'</option>';
+  }
+  echo '</select><label style="display:block;margin-top:7px">Page slug <input style="width:100%" name="'.$key.'[slug]" value="'.esc_attr($current_slug).'" placeholder="'.esc_attr($year.'-canadian-email-summit').'"></label><span class="description">Selecting a page and saving its slug updates that page URL. Its parent stays unchanged.</span>';
+  if($selected_post && $selected_post->post_type==='page')echo '<p><a href="'.esc_url(get_permalink($selected_page)).'" target="_blank" rel="noopener noreferrer">View archive</a></p>';
+  echo '</td><td><select style="width:100%" name="'.$key.'[venue_id]"><option value="">'.(empty($row['venue'])?'No venue':'Legacy: '.esc_html($row['venue'])).'</option>';
   foreach($venues as $id=>$v)echo '<option value="'.esc_attr($id).'" '.selected($row['venue_id']??'',$id,false).'>'.esc_html($v['name']).'</option>';
   echo '</select></td><td>'.esc_html($venue['address']??'').'<span class="description" style="display:block">'.(empty($row['venue_id'])?'Assign a saved venue to inherit its address.':'Managed in Venues.').'</span></td><td><select name="'.$key.'[format]">';
   foreach(array('In person','Virtual','Hybrid') as $v)echo '<option '.selected($row['format']??'',$v,false).'>'.esc_html($v).'</option>';
@@ -142,6 +174,7 @@ function caes_em_recordings_admin(){
     $ids=isset($_POST['rec_speakers'])&&is_array($_POST['rec_speakers'])?array_map('absint',wp_unslash($_POST['rec_speakers'])):array();
     $ids=array_values(array_unique(array_filter($ids,function($sid){return get_post_type($sid)==='caes_speaker' && get_post_status($sid)==='publish';})));
     update_post_meta($id,'caes_rec_speaker_ids',$ids);
+    if(($_POST['caes_em_save_recording']??'')==='save_new'){$id=0;$_GET['year']=$year;$_GET['new']=1;}
     echo '<div class="notice notice-success"><p>Recording saved.</p></div>';
    }
   }
@@ -153,20 +186,21 @@ function caes_em_recordings_admin(){
  }
  echo '<div class="wrap"><h1>Recordings</h1>';
  if(!$id&&!isset($_GET['new'])){
-  echo '<p><a class="button button-primary" href="'.esc_url(admin_url('admin.php?page=caes-em-recordings&new=1')).'">Add recording</a></p>';
+  echo '<p><a class="button button-primary" href="'.esc_url(admin_url('admin.php?page=event-manager-recordings&new=1')).'">Add recording</a></p>';
   $posts=get_posts(array('post_type'=>'caes_recording','post_status'=>array('publish','draft','private','pending'),'posts_per_page'=>500,'orderby'=>'title','order'=>'ASC'));
-  echo '<table class="widefat striped"><thead><tr><th>Session title</th><th>Year</th><th>Video</th><th>Status</th><th>Actions</th></tr></thead><tbody>';
-  foreach($posts as $post){$edit=admin_url('admin.php?page=caes-em-recordings&recording='.$post->ID);echo '<tr><td><a href="'.esc_url($edit).'">'.esc_html($post->post_title).'</a></td><td>'.esc_html(get_post_meta($post->ID,'caes_rec_year',true)).'</td><td>'.(get_post_meta($post->ID,'caes_rec_youtube',true)?'Linked':'Missing').'</td><td>'.esc_html($post->post_status).'</td><td><form method="post">';wp_nonce_field('caes_em_trash_recording');echo '<button type="submit" class="button button-small" name="caes_em_trash_recording" value="'.esc_attr($post->ID).'" onclick="return confirm(\'Move this recording to Trash?\')">Move to Trash</button></form></td></tr>';}
+  caes_em_bulk_toolbar('recordings');
+  echo '<table class="widefat striped"><thead><tr><th><input type="checkbox" class="caes-em-select-all" aria-label="Select all recordings"></th><th>Session title</th><th>Year</th><th>Video</th><th>Status</th><th>Actions</th></tr></thead><tbody>';
+  foreach($posts as $post){$edit=admin_url('admin.php?page=event-manager-recordings&recording='.$post->ID);echo '<tr><td><input type="checkbox" class="caes-em-bulk-item" name="bulk_ids[]" value="'.esc_attr($post->ID).'" form="caes-em-bulk-recordings" aria-label="Select '.esc_attr($post->post_title).'"></td><td><a href="'.esc_url($edit).'">'.esc_html($post->post_title).'</a></td><td>'.esc_html(get_post_meta($post->ID,'caes_rec_year',true)).'</td><td>'.(get_post_meta($post->ID,'caes_rec_youtube',true)?'Linked':'Missing').'</td><td>'.esc_html($post->post_status).'</td><td><form method="post">';wp_nonce_field('caes_em_trash_recording');echo '<button type="submit" class="button button-small" name="caes_em_trash_recording" value="'.esc_attr($post->ID).'" onclick="return confirm(\'Move this recording to Trash?\')">Move to Trash</button></form></td></tr>';}
   echo '</tbody></table>';caes_em_shortcode_panel('Recordings by year','[event_archive_detail year="2024"]');echo '</div>';return;
  }
  $post=$id?get_post($id):null;$meta=function($key)use($id){return $id?get_post_meta($id,'caes_rec_'.$key,true):'';};
  $selected=$meta('speaker_ids');if(!is_array($selected))$selected=array();
  $years=caes_em_archives();krsort($years,SORT_NUMERIC);
- echo '<p><a href="'.esc_url(admin_url('admin.php?page=caes-em-recordings')).'">&larr; All recordings</a></p><form method="post" class="caes-em-form">';wp_nonce_field('caes_em_save_recording');
+ echo '<p><a href="'.esc_url(admin_url('admin.php?page=event-manager-recordings')).'">&larr; All recordings</a></p><form method="post" class="caes-em-form">';wp_nonce_field('caes_em_save_recording');
  echo '<div class="caes-em-section"><h2>Session information</h2>';
  echo '<p><label for="rec_title"><strong>Session title</strong></label><br><input id="rec_title" name="rec_title" class="large-text" required value="'.esc_attr($post?$post->post_title:'').'"></p>';
  echo '<p><label for="rec_year"><strong>Event year</strong></label><br><select id="rec_year" name="rec_year" required><option value="">Select a year</option>';
- foreach($years as $year=>$row)echo '<option value="'.esc_attr($year).'" '.selected($meta('year'),$year,false).'>'.esc_html($year).' ('.esc_html(caes_em_venue_label($row)).')</option>';
+ foreach($years as $year=>$row)echo '<option value="'.esc_attr($year).'" '.selected($meta('year')?:sanitize_text_field(wp_unslash($_GET['year']??'')),$year,false).'>'.esc_html($year).' ('.esc_html(caes_em_venue_label($row)).')</option>';
  echo '</select></p>';
  echo '<p><label for="rec_video"><strong>Video URL</strong></label><br><input id="rec_video" name="rec_video" type="url" class="large-text" required placeholder="https://www.youtube.com/watch?v=..." value="'.esc_attr($meta('video')?:$meta('youtube')).'"></p><p class="description">YouTube playback is supported now. Other video providers can be added later.</p>';
  echo '<p><label for="rec_speakers"><strong>Speakers and panellists</strong></label><br><select id="rec_speakers" name="rec_speakers[]" multiple size="9" style="min-width:320px;max-width:100%">';
@@ -175,9 +209,12 @@ function caes_em_recordings_admin(){
  echo '<p><label for="rec_location"><strong>Location override (optional)</strong></label><br><input id="rec_location" name="rec_location" class="large-text" value="'.esc_attr($meta('location')).'"></p><p class="description">Normally inherited from Event Archives. Only enter an override when this session used a different location.</p>';
  echo '<p><label for="rec_description"><strong>Session description</strong></label></p>';wp_editor($post?$post->post_content:'','rec_description',array('textarea_name'=>'rec_description','textarea_rows'=>9,'media_buttons'=>false));
  echo '<p><label for="rec_slides"><strong>Presentation slides URL (optional)</strong></label><br><input id="rec_slides" name="rec_slides" type="url" class="large-text" value="'.esc_attr($meta('slides')).'"></p>';
- echo '<p><label for="rec_order"><strong>Display order</strong></label><br><input id="rec_order" name="rec_order" type="number" value="'.esc_attr($meta('order')?:0).'" style="width:100px"></p>';
+ $orders=array();foreach(get_posts(array('post_type'=>'caes_recording','post_status'=>array('publish','draft','pending','private'),'posts_per_page'=>-1,'fields'=>'ids')) as $rid){if($rid===$id)continue;$ry=(string)get_post_meta($rid,'caes_rec_year',true);$orders[$ry]=max((int)($orders[$ry]??0),(int)get_post_meta($rid,'caes_rec_order',true));}
+ $order_value=$id?$meta('order'):(int)(($orders[sanitize_text_field(wp_unslash($_GET['year']??''))]??0)+1);
+ echo '<p><label for="rec_order"><strong>Display order</strong></label><br><input id="rec_order" name="rec_order" type="number" min="0" value="'.esc_attr($order_value).'" style="width:100px"></p>';
+ echo '<script>jQuery(function($){var maxByYear='.wp_json_encode($orders).';var isNew='.($id?'false':'true').';if(isNew){$("#rec_year").on("change",function(){$("#rec_order").val((parseInt(maxByYear[this.value]||0,10)+1));});$("#rec_year").trigger("change");}});</script>';
  echo '<p><label for="rec_status"><strong>Status</strong></label><br><select id="rec_status" name="rec_status"><option value="draft" '.selected($post?$post->post_status:'draft','draft',false).'>Draft</option><option value="publish" '.selected($post?$post->post_status:'draft','publish',false).'>Published</option></select></p>';
- echo '<p><button class="button button-primary" name="caes_em_save_recording" value="1">Save recording</button></p></div></form></div>';
+ echo '<p><button class="button button-primary" name="caes_em_save_recording" value="1">Save recording</button> <button class="button" name="caes_em_save_recording" value="save_new">Save and add another</button></p></div></form></div>';
 }
 function caes_em_youtube_id($url){
  if(!is_string($url)||!$url)return '';
@@ -198,28 +235,57 @@ function caes_em_recording_cards($year){
  $html='<div class="caes-recording-grid">';foreach($items as $item){$post=$item['post'];$id=$item['video'];$speakers=get_post_meta($post->ID,'caes_rec_speakers',true);$speaker_ids=get_post_meta($post->ID,'caes_rec_speaker_ids',true);if(is_array($speaker_ids)&&$speaker_ids){$names=array();foreach($speaker_ids as $sid){$sp=get_post((int)$sid);if($sp&&$sp->post_type==='caes_speaker'&&$sp->post_status==='publish')$names[]=$sp->post_title;}if($names)$speakers=implode(', ',$names);}$slides=get_post_meta($post->ID,'caes_rec_slides',true);
   $html.='<article class="caes-recording-card"><button type="button" class="caes-recording-play" data-video="'.esc_attr($id).'" aria-label="Play '.esc_attr($post->post_title).' on YouTube"><img loading="lazy" src="https://i.ytimg.com/vi/'.esc_attr($id).'/hqdefault.jpg" alt=""><span class="caes-recording-play-icon" aria-hidden="true">▶</span></button><div class="caes-recording-card-body"><h3>'.esc_html($post->post_title).'</h3>';
   if($speakers)$html.='<p class="caes-recording-speakers">'.esc_html($speakers).'</p>';
-  if($post->post_content)$html.='<div class="caes-recording-description">'.wp_kses_post(wpautop($post->post_content)).'</div>';
+  if($post->post_content)$html.='<details class="caes-recording-description"><summary>Session description</summary><div>'.wp_kses_post(wpautop($post->post_content)).'</div></details>';
   if($slides)$html.='<p><a href="'.esc_url($slides).'" target="_blank" rel="noopener noreferrer">Presentation slides</a></p>';
   $html.='</div></article>';
  }
  $html.='</div>';return $html;
 }
+/** Explicit page assignment takes precedence over slug inference. */
+function caes_em_archive_year_for_page($page) {
+ if(!($page instanceof WP_Post)||$page->post_type!=='page')return '';
+ foreach(caes_em_archives() as $year=>$row){if(!empty($row['page_id']) && (int)$row['page_id']===(int)$page->ID)return (string)$year;}
+ return caes_em_archive_year_from_slug($page->post_name);
+}
+/** Resolve an archive year from numeric, summit-prefixed, or legacy page slugs. */
+function caes_em_archive_year_from_slug($slug) {
+ $slug = (string) $slug;
+ return preg_match('/^(20[0-9]{2})(?:-canadian-email-summit)?(?:-[0-9]+)?$/D', $slug, $m)
+     ? $m[1]
+     : (preg_match('/^summit-(20[0-9]{2})(?:-[0-9]+)?$/D', $slug, $m) ? $m[1] : '');
+}
+/** Prefer existing published archive pages to avoid breaking historical URLs. */
+function caes_em_archive_year_url($year) {
+ $year = (string) $year;
+ if (!preg_match('/^20[0-9]{2}$/D', $year)) return home_url('/past-events/');
+ $archives=caes_em_archives();$page_id=absint($archives[$year]['page_id']??0);
+ if($page_id){$page=get_post($page_id);if($page instanceof WP_Post && $page->post_type==='page' && $page->post_status==='publish')return get_permalink($page_id);}
+ foreach (array('past-events/'.$year, 'past-events/summit-'.$year, 'past-events/'.$year.'-canadian-email-summit', $year.'-canadian-email-summit') as $path) {
+  $page = get_page_by_path($path);
+  if ($page instanceof WP_Post && $page->post_status === 'publish') return get_permalink($page);
+ }
+ return home_url('/past-events/summit-'.$year.'/');
+}
 add_shortcode('event_archive_index',function(){
  $data=caes_em_archives();krsort($data,SORT_NUMERIC);
  $out='<div class="caes-archive-hero"><p class="caes-eyebrow">PAST EVENTS</p><h1>Explore the Summit archives</h1><p>Revisit the conversations, practical lessons, and people who have shaped the Canadian Email Summit.</p></div><h2>Browse by year</h2><div class="caes-year-grid">';
- foreach($data as $year=>$row){if(empty($row['show']))continue;$url=home_url('/past-events/summit-'.$year.'/');$out.='<a class="caes-year-card" href="'.esc_url($url).'"><span class="caes-year-card-label">CANADIAN EMAIL SUMMIT</span><strong>'.esc_html($year).'</strong><span>'.esc_html(caes_em_venue_label($row)).'</span><span>Explore recordings and sessions <span aria-hidden="true">→</span></span></a>';}
+ foreach($data as $year=>$row){if(empty($row['show']))continue;$url=caes_em_archive_year_url($year);$out.='<a class="caes-year-card" href="'.esc_url($url).'"><span class="caes-year-card-label">CANADIAN EMAIL SUMMIT</span><strong>'.esc_html($year).'</strong><span>'.esc_html(caes_em_venue_label($row)).'</span><span>Explore recordings and sessions <span aria-hidden="true">→</span></span></a>';}
  $out.='</div>';return $out;
 });
 add_shortcode('event_archive_detail',function($atts){
  $atts=shortcode_atts(array('year'=>''),$atts,'event_archive_detail');$year=trim((string)$atts['year']);
- if(!$year&&is_page()){$page=get_queried_object();$year=$page instanceof WP_Post?$page->post_name:'';if(preg_match('/^(?:summit-)?(20[0-9]{2})(?:-[0-9]+)?$/D',$year,$match))$year=$match[1];}
+ if(!$year&&is_page()){$page=get_queried_object();$year=$page instanceof WP_Post?caes_em_archive_year_for_page($page):'';}
  if(!preg_match('/^20[0-9]{2}$/D',$year))return '<p>Archive year not configured. Use a year page slug or set the shortcode year.</p>';
  $data=caes_em_archives();if(!isset($data[$year]) || (empty($data[$year]['show']) && !current_user_can('manage_options')))return '<p>This event archive is not available.</p>';
- $row=$data[$year];$out='<div class="caes-archive-hero"><p class="caes-eyebrow">PAST EVENTS · '.esc_html($year).'</p><h1>'.esc_html($year).' Canadian Email Summit</h1><p class="caes-archive-venue">'.esc_html(caes_em_venue_label($row)).'</p>';
+ $row=$data[$year];
+ $out='<nav class="caes-archive-year-nav" aria-label="Past event years"><span class="caes-year-nav-label">Browse past Summits</span><a href="'.esc_url(home_url('/past-events/')).'">All years</a>';
+ krsort($data,SORT_NUMERIC);foreach($data as $y=>$r){if(empty($r['show']))continue;$out.='<a href="'.esc_url(caes_em_archive_year_url($y)).'"'.($y===$year?' aria-current="page"':'').'>'.esc_html($y).'</a>';}
+ $out.='</nav><div class="caes-archive-hero"><p class="caes-eyebrow">PAST EVENTS · '.esc_html($year).'</p><h1>'.esc_html($year).' Canadian Email Summit</h1><p class="caes-archive-venue">'.esc_html(caes_em_venue_label($row)).'</p>';
  if(caes_em_venue_address($row))$out.='<p class="caes-archive-address">'.esc_html(caes_em_venue_address($row)).'</p>';
- $out.='<p>'.esc_html(!empty($row['description'])?$row['description']:'Explore recorded sessions and event highlights from this edition of the Summit.').'</p></div><nav class="caes-archive-year-nav" aria-label="Past event years"><a href="'.esc_url(home_url('/past-events/')).'">All years</a>';
- krsort($data,SORT_NUMERIC);foreach($data as $y=>$r){if(empty($r['show']))continue;$out.='<a href="'.esc_url(home_url('/past-events/summit-'.$y.'/')).'"'.($y===$year?' aria-current="page"':'').'>'.esc_html($y).'</a>';}
- $out.='</nav><h2>Session recordings</h2>'.caes_em_recording_cards($year);return $out;
+ $out.='<p>'.esc_html(!empty($row['description'])?$row['description']:'Explore recorded sessions and event highlights from this edition of the Summit.').'</p></div>';
+ $count_query=new WP_Query(array('post_type'=>'caes_recording','post_status'=>'publish','posts_per_page'=>200,'fields'=>'ids','meta_query'=>array(array('key'=>'caes_rec_year','value'=>$year,'compare'=>'='))));
+ $count=0;foreach($count_query->posts as $rec_id){if(caes_em_youtube_id(get_post_meta($rec_id,'caes_rec_youtube',true)))$count++;}
+ $out.='<h2>Session recordings ('.(int)$count.')</h2>'.caes_em_recording_cards($year);return $out;
 });
 add_action('wp_enqueue_scripts',function(){
  wp_register_script('caes-archive-video',false,array(),'0.1.10',true);wp_enqueue_script('caes-archive-video');
@@ -232,14 +298,14 @@ function caes_em_shortcode_panel($title,$shortcode){
 }
 add_action('admin_footer',function(){
  $screen=isset($_GET['page'])?sanitize_key(wp_unslash($_GET['page'])):'';
- if(strpos($screen,'caes-em-')!==0&&$screen!=='caes-event-manager')return;
+ if(strpos($screen,'event-manager-')!==0 && strpos($screen,'caes-em-')!==0 && $screen!=='event-manager')return;
  echo '<script>document.addEventListener("click",function(e){var b=e.target.closest(".caes-em-copy");if(!b)return;var value=b.getAttribute("data-copy");if(navigator.clipboard&&window.isSecureContext){navigator.clipboard.writeText(value).then(function(){b.textContent="Copied!";setTimeout(function(){b.textContent="Copy shortcode"},1600)}).catch(function(){window.prompt("Copy shortcode:",value)})}else{window.prompt("Copy shortcode:",value)}});</script>';
 });
 
 add_action('admin_notices',function(){
  $page=isset($_GET['page'])?sanitize_key(wp_unslash($_GET['page'])):'';
- if(!in_array($page,array('caes-em-speakers','caes-em-agenda','caes-em-recordings'),true))return;
- if($page==='caes-em-speakers')caes_em_shortcode_panel('Speaker directory','[caes_speakers year="2026"]');
- if($page==='caes-em-agenda')caes_em_shortcode_panel('Public agenda','[event_agenda year="2026"]');
- if($page==='caes-em-recordings')caes_em_shortcode_panel('Recording archive (year-specific)','[event_archive_detail year="2024"]');
+ if(!in_array($page,array('event-manager-speakers','event-manager-agenda','event-manager-recordings'),true))return;
+ if($page==='event-manager-speakers')caes_em_shortcode_panel('Speaker directory','[event_speakers year="2026"]');
+ if($page==='event-manager-agenda')caes_em_shortcode_panel('Public agenda','[event_agenda year="2026"]');
+ if($page==='event-manager-recordings')caes_em_shortcode_panel('Recording archive (year-specific)','[event_archive_detail year="2024"]');
 });
